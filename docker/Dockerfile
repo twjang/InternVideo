@@ -11,3 +11,5 @@ ARG INTERN_COMMIT=1
 RUN git clone https://github.com/twjang/InternVideo.git ./intern_video && cd ./intern_video && git checkout fix/demo
 WORKDIR /opt/src/intern_video/InternVideo2/multi_modality
 RUN pip install -r requirements.txt
+RUN apt update && apt install vim zsh && apt clean && chsh -s /usr/bin/zsh 
+RUN sh -c "$(wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"
