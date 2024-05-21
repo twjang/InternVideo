@@ -24,3 +24,4 @@ transformers==4.28.1
 wandb==0.16.1
 peft==0.10.0
 easydict
+torch-tensorrt==1.4.0

@@ -287,26 +287,25 @@ class Block(nn.Module):
         self.with_cp = with_cp
         self.use_fused_rmsnorm = use_fused_rmsnorm
     
+    def _inner_forward(self, x, residual=None):
+        if self.use_fused_rmsnorm:
+            x, residual = self.norm1(x, residual)
+            x = self.drop_path1(self.ls1(self.attn(x)))
+            x, residual = self.norm2(x, residual)
+            x = self.drop_path2(self.ls2(self.mlp(x)))
+            return x, residual
+        else:
+            assert residual is None
+            x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
+            x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+            return x
+            
     def forward(self, x, residual=None):
-        
-        def _inner_forward(x, residual=None):
-            if self.use_fused_rmsnorm:
-                x, residual = self.norm1(x, residual)
-                x = self.drop_path1(self.ls1(self.attn(x)))
-                x, residual = self.norm2(x, residual)
-                x = self.drop_path2(self.ls2(self.mlp(x)))
-                return x, residual
-            else:
-                assert residual is None
-                x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
-                x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
-                return x
-        
         if self.with_cp:
             # print(f"\033[31m use_checkpoint [0m")
-            return checkpoint.checkpoint(_inner_forward, x, residual)
+            return checkpoint.checkpoint(lambda x, residual: self._inner_forward, x, residual)
         else:
-            return _inner_forward(x, residual=residual)
+            return self._inner_forward(x, residual=residual)
 
 
 class PatchEmbed(nn.Module):
