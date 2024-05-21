@@ -301,11 +301,12 @@ class Block(nn.Module):
             return x
             
     def forward(self, x, residual=None):
-        if self.with_cp:
-            # print(f"\033[31m use_checkpoint [0m")
-            return checkpoint.checkpoint(lambda x, residual: self._inner_forward, x, residual)
-        else:
-            return self._inner_forward(x, residual=residual)
+        # if self.with_cp:
+        #     # print(f"\033[31m use_checkpoint [0m")
+        #     return checkpoint.checkpoint(lambda x, residual: self._inner_forward, x, residual)
+        # else:
+        #     return self._inner_forward(x, residual=residual)
+        return self._inner_forward(x, residual=residual)
 
 
 class PatchEmbed(nn.Module):
