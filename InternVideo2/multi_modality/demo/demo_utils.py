@@ -36,6 +36,7 @@ def frames2tensor(vid_list, fnum=8, target_size=(224, 224), device=torch.device(
     vid_tube = np.concatenate(vid_tube, axis=1)
     vid_tube = np.transpose(vid_tube, (0, 1, 4, 2, 3))
     vid_tube = torch.from_numpy(vid_tube).to(device, non_blocking=True).float()
+    print(vid_tube.shape)
     return vid_tube
 
 
@@ -79,43 +80,60 @@ def retrieve_text(frames,
 def setup_internvideo2(config: dict):
     if "bert" in config.model.text_encoder.name:
         tokenizer = BertTokenizer.from_pretrained(config.model.text_encoder.pretrained, local_files_only=True)
+        print('bert tokenizer loaded')
         model = InternVideo2_Stage2(config=config, tokenizer=tokenizer, is_pretrain=True)
+        print('intern video2 stage2 loaded')
     else:
         model = InternVideo2_Stage2(config=config, is_pretrain=True)
         tokenizer = model.tokenizer
+        print('intern video2 stage2 loaded')
+
 
     if config.get('compile_model', False):
+        print('model compiling..')
         torch.set_float32_matmul_precision('high')
         model = torch.compile(model)
-
-    model = model.to(torch.device(config.device))
+        print('model compiled')
+    
+    torch.cuda.synchronize()
+    print(f'sending model to {config.device}')
+    
+    model.to(torch.device(config.device))
     model_without_ddp = model
+    
+    print(f'model sent to {config.device}')
+
 
     if (config.pretrained_path.strip() and (os.path.isfile(config.pretrained_path)) or "s3://" in config.pretrained_path):
-        checkpoint = torch.load(config.pretrained_path, map_location="cpu")
+        print(f"loading model from {config.pretrained_path}")
+
+        checkpoint = torch.load(config.pretrained_path, map_location=config.device)
         try:
             if "model" in checkpoint.keys():
                 state_dict = checkpoint["model"]
             else:
                 state_dict = checkpoint["module"] # This is a deepspeed stage 1 model
-        except:  
+        except KeyError:
             state_dict = checkpoint
 
         if config.get('origin_num_frames', None) is not None:
             a = len(state_dict)
+            print(f"interpolating position embedding.. ")
             interpolate_pos_embed_internvideo2_new(state_dict, model_without_ddp.vision_encoder, orig_t_size=config.origin_num_frames)
             assert a == len(state_dict), state_dict.keys()
 
         msg = model_without_ddp.load_state_dict(state_dict, strict=False)
         print(f"load_state_dict: {msg}")
-    
+
+    print(f"model type conversion..")
     if config.get('use_bf16', False):
         model_without_ddp = model_without_ddp.to(torch.bfloat16)
     elif config.get('use_half_precision', False):
         model_without_ddp = model_without_ddp.to(torch.float16)
     else:
         model_without_ddp = model_without_ddp.to(torch.float32)
-    
+    print(f"model type converted")
+
     model_without_ddp.eval()
     return (model_without_ddp, tokenizer,)
 
@@ -140,9 +158,11 @@ class InternVideo2_Stage2(nn.Module):
         # create modules.
         self.vision_encoder = self.build_vision_encoder()
         self.freeze_vision()
+        print('vision encoder built')
 
         self.text_encoder = self.build_text_encoder()
         self.freeze_text()
+        print('text encoder built')
 
         self.vision_proj = nn.Linear(self.vision_width, self.embed_dim)
         self.text_proj = nn.Linear(self.text_width, self.embed_dim)
@@ -179,7 +199,8 @@ class InternVideo2_Stage2(nn.Module):
         """
         
         T = image.shape[1]
-        use_image = True if T == 1 else False
+        # use_image = True if T == 1 else False
+        use_image = False
         image = image.permute(0, 2, 1, 3, 4).to(self.dtype) # [B,T,C,H,W] -> [B,C,T,H,W]
         # whether save temporal dimension
         # keep_temporal=self.config.model.vision_encoder.keep_temporal
